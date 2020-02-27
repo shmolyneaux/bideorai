@@ -26,3 +26,9 @@ do not benefit _my particular_ application.
 - Adaptive streaming / multiple bitrate sources
     - This makes delivery and storage more complicated and expensive
     - I will only watch videos on a reasonably steady connection
+
+# Screw it, the file system is our database!
+No DBMS? What about S C A L I N G?
+
+We don't need 5 nines. Data can be lost without issues. Everything is running
+from a single node. SSD's are fast. Using a database is unnecessary.
