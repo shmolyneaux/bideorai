@@ -1,0 +1,202 @@
+<!DOCTYPE HTML>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Main</title>
+        <script src="shaka-player.ui.js"></script>
+        <script src="main.js"></script>
+        <link rel="stylesheet" href="material_font.css">
+    </head>
+    <body>
+        <div id="elm"></div>
+        <script>
+////////////////////////////////////////////////////////////////////////////////
+//
+// Shaka Tutorial Stuff
+//
+////////////////////////////////////////////////////////////////////////////////
+
+function initShaka() {
+  // Install built-in polyfills to patch browser incompatibilities.
+  shaka.polyfill.installAll();
+}
+
+function onErrorEvent(event) {
+  // Extract the shaka.util.Error object from the event.
+  onError(event.detail);
+}
+
+function onError(error) {
+  // Log the error.
+  console.error('Error code', error.code, 'object', error);
+}
+
+document.addEventListener('DOMContentLoaded', initShaka);
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// SHM stuff
+//
+////////////////////////////////////////////////////////////////////////////////
+
+var app = Elm.Main.init({
+    node: document.getElementById('elm'),
+    flags: {}
+});
+
+class ElmPlayer extends HTMLElement {
+    constructor() {
+        // Always call super first in constructor
+        super();
+
+        // Check to see if the browser supports the basic APIs Shaka needs.
+        if (!shaka.Player.isBrowserSupported()) {
+          // This browser does not have the minimum set of APIs we need.
+          console.error('Browser not supported!');
+        }
+
+        var root;
+        // Create a shadow root
+        root = this.attachShadow({mode: 'open'});
+        // // Don't use a shadow root
+        // root = this;
+
+        var container = document.createElement('div');
+        var video = document.createElement('video');
+        video.setAttribute('id', 'video');
+        video.setAttribute('width', '640');
+        video.setAttribute('style', 'width:100%;height:100%');
+
+        container.appendChild(video);
+        root.appendChild(container);
+
+        var css_link = document.createElement('link');
+        css_link.setAttribute('rel', 'stylesheet');
+        css_link.setAttribute('href', 'controls.css');
+
+        root.appendChild(css_link);
+
+        this.video = video;
+        this.container = container;
+
+        this.postInitCallbacks = [];
+
+        var elmPlayer = this;
+
+        document.addEventListener('shaka-ui-loaded',
+            function() {
+                elmPlayer.processPostInitCallbacks();
+            }
+        );
+
+        this.queuePostInitCallback(
+            function() {
+                console.log("Creating player");
+
+                // Create a Player instance.
+                var player = new shaka.Player(elmPlayer.video);
+                player.configure({
+                    streaming: {
+                        bufferingGoal: 30,
+                        bufferBehind: 30,
+                    },
+                    retryParameters: {
+                          timeout: 3000,       // timeout in ms, after which we abort; 0 means never
+                          maxAttempts: 8,      // the maximum number of requests before we fail
+                          backoffFactor: 1,
+                          baseDelay: 1000,
+                    }
+                });
+                elmPlayer.player = player;
+
+                // Attach player to the window to make it easy to access in the JS console.
+                window.player = player;
+
+                // Listen for error events.
+                player.addEventListener('error', onErrorEvent);
+
+                console.log('starting overlay initialization');
+
+                var video = elmPlayer.video;
+                var container = elmPlayer.container;
+                const ui = new shaka.ui.Overlay(player, container, video);
+                console.log('overlap step 2');
+
+                let uiConfig = ui.getConfiguration();
+                uiConfig['seekBarColors']['buffered'] = 'rgb(0, 135, 175)';
+                //uiConfig['controlPanelElements'] = ['rewind', 'fast_forward'];
+                console.log(uiConfig);
+                ui.configure(uiConfig);
+
+                ui.getControls();
+
+                console.log('initialized Overlay');
+            }
+        );
+    }
+
+    connectedCallback() {
+        console.log('SHM video player added to page');
+    }
+
+    disconnectedCallback() {
+        console.log('SHM video player removed from page');
+    }
+
+    queuePostInitCallback(fn) {
+        if (window.shakaUiLoaded) {
+            fn();
+        } else {
+            this.postInitCallbacks.push(fn);
+        }
+    }
+
+    processPostInitCallbacks() {
+        for (var i=0; i < this.postInitCallbacks.length; i++) {
+            this.postInitCallbacks[i]();
+        }
+        this.postInitCallbacks = [];
+    }
+
+    static get observedAttributes() { return ['src', 'poster']; }
+    attributeChangedCallback(name, oldValue, newValue) {
+        console.log('Queue: Attr ' + name + ": " + oldValue + " --> " + newValue);
+
+        var elmPlayer = this;
+        this.queuePostInitCallback(
+            function() {
+                console.log('Attr ' + name + ": " + oldValue + " --> " + newValue);
+
+                // TODO: defer until after overlay is finished init
+                if (name === "src" && newValue) {
+                    // Try to load a manifest.
+                    // This is an asynchronous process.
+                    elmPlayer.player.load(newValue).then(function() {
+                      // This runs if the asynchronous load is successful.
+                      console.log('The video has now been loaded!');
+                    }).catch(onError);  // onError is executed if the asynchronous load fails.
+                } else if (name === "poster" && newValue) {
+                    elmPlayer.video.setAttribute('poster', newValue);
+                }
+            }
+        );
+    }
+}
+
+customElements.define('elm-player', ElmPlayer);
+
+window.shakaUiLoaded = false;
+
+// Listen to the custom shaka-ui-loaded event, to wait until the UI is loaded.
+document.addEventListener('shaka-ui-loaded', function() {
+    console.log("shaka ui loaded");
+    window.shakaUiLoaded = true;
+});
+// Listen to the custom shaka-ui-load-failed event, in case Shaka Player fails
+// to load (e.g. due to lack of browser support).
+document.addEventListener('shaka-ui-load-failed', function() {
+    console.log("shaka ui failed to load");
+});
+        </script>
+    </body>
+</html>
