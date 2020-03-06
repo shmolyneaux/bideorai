@@ -64,6 +64,7 @@ struct VideoContent {
     video_url: String,
     thumbnail_url: String,
     description: String,
+    source: Option<String>,
     // Episode / season here?
     metadata: HashMap<String, String>,
 }
@@ -172,6 +173,7 @@ fn video_content_from_json_info(asset_dir: &Path, json_file: &Path) -> Option<Vi
         video_url: path_to_asset_url(asset_dir, &video_path).ok()?,
         thumbnail_url: path_to_asset_url(asset_dir, &thumbnail_url).ok()?,
         description: info["plot"].as_str()?.to_string(),
+        source: info["source"].as_str().map(|s| s.to_string()),
         metadata,
     })
 }
@@ -236,6 +238,8 @@ mod tests {
 
     use tempdir::TempDir;
 
+    use pretty_assertions::assert_eq;
+
     #[derive(Clone)]
     enum FileEntry {
         File {name: String, content: String},
@@ -299,6 +303,7 @@ mod tests {
                             d(
                                 "Season 1",
                                 &[
+                                    // Null source
                                     f(
                                         "Naruto - S01E01 - Enter: Naruto Uzumaki!.json",
                                         r#"
@@ -306,10 +311,12 @@ mod tests {
                                                 "title": "Enter: Naruto Uzumaki!",
                                                 "plot": "Some cool story",
                                                 "episode": 1,
-                                                "season": 1
+                                                "season": 1,
+                                                "source": null
                                             }
                                         "#
                                     ),
+                                    // No Source
                                     f(
                                         "Naruto - S01E02 - My Name is Konohamaru.json",
                                         r#"
@@ -318,6 +325,19 @@ mod tests {
                                                 "plot": "Another cool story",
                                                 "episode": 2,
                                                 "season": 1
+                                            }
+                                        "#
+                                    ),
+                                    // Specified source
+                                    f(
+                                        "Naruto - S01E03 - Sasuke and Sakura: Friends or Foes?.json",
+                                        r#"
+                                            {
+                                                "title": "Sasuke and Sakura: Friends or Foes?",
+                                                "plot": "A third cool story",
+                                                "episode": 3,
+                                                "season": 1,
+                                                "source": "[ReleaseGroup].Naruto-03.[1080p]"
                                             }
                                         "#
                                     ),
@@ -388,6 +408,7 @@ mod tests {
                         video_url: "/assets/Naruto/Season%201/Naruto%20-%20S01E01%20-%20Enter%3A%20Naruto%20Uzumaki%21.mpd".to_string(),
                         thumbnail_url: "/assets/Naruto/Season%201/Naruto%20-%20S01E01%20-%20Enter%3A%20Naruto%20Uzumaki%21-thumb.jpg".to_string(),
                         description: "Some cool story".to_string(),
+                        source: None,
                         metadata: hm(&[
                             ("season", "1"),
                             ("episode", "1")
@@ -398,9 +419,21 @@ mod tests {
                         video_url: "/assets/Naruto/Season%201/Naruto%20-%20S01E02%20-%20My%20Name%20is%20Konohamaru.mpd".to_string(),
                         thumbnail_url: "/assets/Naruto/Season%201/Naruto%20-%20S01E02%20-%20My%20Name%20is%20Konohamaru-thumb.jpg".to_string(),
                         description: "Another cool story".to_string(),
+                        source: None,
                         metadata: hm(&[
                             ("season", "1"),
                             ("episode", "2")
+                        ]),
+                    },
+                    VideoContent {
+                        title: "Sasuke and Sakura: Friends or Foes?".to_string(),
+                        video_url: "/assets/Naruto/Season%201/Naruto%20-%20S01E03%20-%20Sasuke%20and%20Sakura%3A%20Friends%20or%20Foes%3F.mpd".to_string(),
+                        thumbnail_url: "/assets/Naruto/Season%201/Naruto%20-%20S01E03%20-%20Sasuke%20and%20Sakura%3A%20Friends%20or%20Foes%3F-thumb.jpg".to_string(),
+                        description: "A third cool story".to_string(),
+                        source: Some("[ReleaseGroup].Naruto-03.[1080p]".to_string()),
+                        metadata: hm(&[
+                            ("season", "1"),
+                            ("episode", "3")
                         ]),
                     },
                 ],
