@@ -40,6 +40,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("input", help="Input .nfo file or directory containing .nfo files")
     parser.add_argument("-o", "--output", help="Output file (defaults to stdout)")
+    parser.add_argument("--source", help="Name of the source file")
 
     return parser.parse_args()
 
@@ -73,10 +74,11 @@ def default_info(spec):
     return info
 
 
-def nfo_to_json(input_file, output_file):
+def nfo_to_json(input_file, output_file, source=None):
     root = ET.fromstring(input_file.read())
 
     info = parse_nfo(root, specs[root.tag])
+    info['source'] = source
     info_json = json.dumps(info, indent=4)
 
     output_file.write(info_json)
@@ -94,11 +96,11 @@ if __name__ == "__main__":
         with open(path) as input_file:
             if args.output:
                 output_file = open(args.output, "w")
-                nfo_to_json(input_file, output_file)
+                nfo_to_json(input_file, output_file, source=args.source)
                 output_file.close()
             else:
                 output_file = sys.stdout
-                nfo_to_json(input_file, output_file)
+                nfo_to_json(input_file, output_file, source=args.source)
 
     else:
         for root, dirs, files in os.walk(path):
@@ -110,4 +112,4 @@ if __name__ == "__main__":
 
                 with open(nfo_path) as input_file:
                     with open(json_path, "w") as output_file:
-                        nfo_to_json(input_file, output_file)
+                        nfo_to_json(input_file, output_file, source=args.source)
