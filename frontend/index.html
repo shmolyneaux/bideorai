@@ -99,12 +99,12 @@ class ElmPlayer extends HTMLElement {
                     streaming: {
                         bufferingGoal: 30,
                         bufferBehind: 30,
-                    },
-                    retryParameters: {
-                          timeout: 3000,       // timeout in ms, after which we abort; 0 means never
-                          maxAttempts: 8,      // the maximum number of requests before we fail
-                          backoffFactor: 1,
-                          baseDelay: 1000,
+                        retryParameters: {
+                              timeout: 3000,       // timeout in ms, after which we abort; 0 means never
+                              maxAttempts: 8,      // the maximum number of requests before we fail
+                              backoffFactor: 1,
+                              baseDelay: 1000,
+                        }
                     }
                 });
                 elmPlayer.player = player;
