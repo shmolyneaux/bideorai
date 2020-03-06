@@ -47,6 +47,8 @@ try:
         nfo_metadata,
         "--output",
         json_metadata
+        "--source"
+        Path(source_path).stem
     ]
     run_cmd(nfo_to_json_args)
 
