@@ -18,6 +18,18 @@ DESIRED_AUDIO_CODEC = 'aac'
 def print_command(args):
     print(' '.join(shlex.quote(str(arg)) for arg in args))
 
+def stream_language(stream):
+    # Grab the subtitle language from the subtitle metadata
+    # Use the walrus operator for Python 3.8
+    if 'tags' in stream:
+        if 'language' in stream['tags']:
+            return stream['tags']['language']
+
+    return lang
+
+def packager_attrs_args(attrs):
+    return ",".join(f"{k}={v}" for k,v in attrs.items())
+
 parser = argparse.ArgumentParser()
 parser.add_argument("-i", "--input", required=True, help="Input video file")
 parser.add_argument("--b2-dir", required=True, help="b2 location for generated files")
@@ -40,6 +52,7 @@ b2 = subprocess.check_output('which b2'.split()).decode().strip()
 
 # Get video details with ffprobe
 ffprobe_args = [ffprobe] + "-v quiet -print_format json -show_format -show_streams".split() + [args.input]
+print_command(ffprobe_args)
 json_result = subprocess.check_output(ffprobe_args)
 obj = json.loads(json_result)
 
@@ -63,6 +76,7 @@ video_stream = streams['video'][0]
 video_needs_transcoding = video_stream['codec_name'] != DESIRED_VIDEO_CODEC
 
 audio_stream = streams['audio'][0]
+maybe_audio_language = stream_language(audio_stream)
 audio_needs_transcoding = audio_stream['codec_name'] != DESIRED_AUDIO_CODEC
 
 ffmpeg_args = [ffmpeg, '-i', args.input]
@@ -82,9 +96,7 @@ else:
 
 # TODO: create multiple audio channels?
 
-
 # TODO: what if the input is an mp4 and doesn't need a codec change?
-# TODO: what if the input is an mp4 and needs a codec change?
 
 # Randomize the intermediate file names so that multiple invocations of this
 # script can run in parallel. We don't _expect_ them to run in parallel, but
@@ -99,44 +111,81 @@ with tempfile.TemporaryDirectory() as d:
     # Create an mp4 file, which is the only video container that `packager` supports
     ffmpeg_args += [str(intermediate_mp4)]
     print_command(ffmpeg_args)
-    subprocess.check_call(ffmpeg_args)
+    if not args.dry_run:
+        subprocess.check_call(ffmpeg_args)
 
     # Demux the video and audio streams from the intermediate mp4, and create an
     # dash video manifest which references those streams. We set the base_url to
     # reference the location where we're _intending_ to put the demuxed files.
-    video_file = f"video.mp4"
-    audio_file = f"audio.mp4"
+
+    video_file = "video.mp4"
+    video_attrs = {
+        "in": intermediate_mp4,
+        "stream": "video",
+        "output": video_file,
+    }
+
+    audio_file = "audio.mp4"
+    audio_attrs = {
+        "in": intermediate_mp4,
+        "stream": "audio",
+        "output": audio_file,
+    }
+    if maybe_audio_language:
+        audio_attrs['lang'] = maybe_audio_language
+
+    mpd_input_streams = [
+        packager_attrs_args(video_attrs),
+        packager_attrs_args(audio_attrs),
+    ]
+
+    upload_list = [video_file, audio_file]
+
+    # Also include subtitles, if available
+    has_subs = 'subtitle' in streams
+    for i, stream in enumerate(streams.get('subtitle', [])):
+        output_sub_file = f"subs_{i}.vtt"
+        intermediate_sub_file = f"in_subs_{i}.vtt"
+        ffmpeg_sub_extraction_args = [ffmpeg, '-i', args.input, '-map', f'0:s:{i}', intermediate_sub_file]
+        print_command(ffmpeg_sub_extraction_args )
+        if not args.dry_run:
+            subprocess.check_call(ffmpeg_sub_extraction_args)
+
+        sub_attrs = {
+            'in': intermediate_sub_file,
+            'stream': 'text',
+            'output': output_sub_file,
+        }
+
+        maybe_sub_language = stream_language(stream)
+        if maybe_sub_language:
+            sub_attrs['lang'] = maybe_sub_language
+
+        mpd_input_streams.append(packager_attrs_args(sub_attrs))
+        upload_list.append(output_sub_file)
 
     packager_args = [
         packager,
-        f"in={intermediate_mp4},stream=audio,output={audio_file}",
-        f"in={intermediate_mp4},stream=video,output={video_file}",
+        *mpd_input_streams,
         "--mpd_output",
         Path(args.input).with_suffix(".mpd"),
         "--base_urls",
         f"https://f000.backblazeb2.com/file/{args.b2_bucket}/{args.b2_dir}/",
     ]
     print_command(packager_args)
-    subprocess.check_call(packager_args)
+    if not args.dry_run:
+        subprocess.check_call(packager_args)
 
-    b2_audio_args = [
-        "b2",
-        "upload-file",
-        args.b2_bucket,
-        audio_file,
-        f"{args.b2_dir}/{audio_file}"
-    ]
-    print_command(b2_audio_args)
-    subprocess.check_call(b2_audio_args)
-
-    b2_video_args = [
-        "b2",
-        "upload-file",
-        args.b2_bucket,
-        video_file,
-        f"{args.b2_dir}/{video_file}"
-    ]
-    print_command(b2_video_args)
-    subprocess.check_call(b2_video_args)
+    for file_name in upload_list:
+        b2_args = [
+            "b2",
+            "upload-file",
+            args.b2_bucket,
+            file_name,
+            f"{args.b2_dir}/{file_name}"
+        ]
+        print_command(b2_args)
+        if not args.dry_run:
+            subprocess.check_call(b2_args)
 
     print("Done processing. Cleaning up...")
