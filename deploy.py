@@ -45,6 +45,8 @@ COPY_EXCLUSIONS = [
     'backend/target/*/build',
     'backend/target/*/.fingerprint',
     'backend/target/*/incremental',
+    'Bideorai.toml',
+    'elm-stuff/*',
     '.git',
     '*.swp',
 ]
