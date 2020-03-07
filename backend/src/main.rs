@@ -132,7 +132,7 @@ fn title(asset_dir: &Path, name: &str) -> Result<TitleLong, String> {
         for entry in episode_entries {
             let entry = entry.map_err(|_| "Could not read season_entry".to_string())?;
             if entry.path().extension() == Some(OsStr::new("json")) {
-                if let Some(video_content) = video_content_from_json_info(&asset_dir, &entry.path()) {
+                if let Ok(video_content) = video_content_from_json_info(&asset_dir, dbg!(&entry.path())) {
                     content_for_title.push(video_content)
                 } else {
                     return Err("Read invalid content info on server".to_string());
@@ -152,13 +152,38 @@ fn title(asset_dir: &Path, name: &str) -> Result<TitleLong, String> {
     })
 }
 
+enum VideoContentToJsonError {
+    Other(String)
+}
 
-fn video_content_from_json_info(asset_dir: &Path, json_file: &Path) -> Option<VideoContent> {
-    let base_path = json_file.file_stem()?.to_string_lossy();
-    let video_path = json_file.parent()?.join((base_path.clone() + ".mpd").to_string());
-    let thumbnail_url = json_file.parent()?.join((base_path.clone() + "-thumb.jpg").to_string());
+impl From<std::io::Error> for VideoContentToJsonError {
+    fn from(err: std::io::Error) -> Self {
+        Self::Other("".to_string())
+    }
+}
 
-    let info = json::parse(&fs::read_to_string(json_file).ok()?).ok()?;
+fn video_content_from_json_info(asset_dir: &Path, json_file: &Path) -> Result<VideoContent, VideoContentToJsonError> {
+    println!("video content from json info {:?} {:?}", asset_dir, json_file);
+    let parent_dir = if let Some(parent_dir) = json_file.parent() {
+        parent_dir
+    } else {
+        return Err(VideoContentToJsonError::Other(format!("Couldn't get parent for path {}", json_file.display())));
+    };
+
+    let file_stem = if let Some(stem) = json_file.file_stem() {
+        stem.to_string_lossy()
+    } else {
+        return Err(VideoContentToJsonError::Other(format!("Couldn't get stem for path {}", json_file.display())));
+    };
+
+    let video_path = parent_dir.join((file_stem.clone() + ".mpd").to_string());
+    let thumbnail_url = parent_dir.join((file_stem.clone() + "-thumb.jpg").to_string());
+
+    let json_file_content = fs::read_to_string(json_file)
+        .map_err(|_| VideoContentToJsonError::Other(format!("Couldn't read file {}", json_file.display())))?;
+
+    let info = json::parse(&json_file_content)
+        .map_err( |_| VideoContentToJsonError::Other(format!("Couldn't parse file {}", json_file.display())))?;
 
     let mut metadata: HashMap<String, String> = HashMap::new();
     if let Some(episode_number) = info["episode"].as_u64() {
@@ -168,11 +193,21 @@ fn video_content_from_json_info(asset_dir: &Path, json_file: &Path) -> Option<Vi
         metadata.insert("season".to_string(), season_number.to_string());
     }
 
-    Some(VideoContent {
-        title: info["title"].as_str()?.to_string(),
-        video_url: path_to_asset_url(asset_dir, &video_path).ok()?,
-        thumbnail_url: path_to_asset_url(asset_dir, &thumbnail_url).ok()?,
-        description: info["plot"].as_str()?.to_string(),
+    Ok(VideoContent {
+        title:
+            info["title"].as_str().map_or(
+                Err(VideoContentToJsonError::Other(format!("Couldn't read title field of json file {}", json_file.display()))),
+                |t| Ok(t.to_string()),
+            )?,
+        video_url: path_to_asset_url(asset_dir, &video_path)
+            .map_err(|_| VideoContentToJsonError::Other(format!("Couldn't produce video url from {}", json_file.display())))?,
+        thumbnail_url: path_to_asset_url(asset_dir, &thumbnail_url)
+            .map_err(|_| VideoContentToJsonError::Other(format!("Couldn't produce thumbnail url from {}", json_file.display())))?,
+        description:
+            info["source"].as_str().map_or(
+                Err(VideoContentToJsonError::Other(format!("Couldn't read plot field of json file {}", json_file.display()))),
+                |t| Ok(t.to_string()),
+            )?,
         source: info["source"].as_str().map(|s| s.to_string()),
         metadata,
     })
