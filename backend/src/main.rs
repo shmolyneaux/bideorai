@@ -238,6 +238,7 @@ mod tests {
 
     use tempdir::TempDir;
 
+    #[cfg(test)]
     use pretty_assertions::assert_eq;
 
     #[derive(Clone)]
