@@ -174,7 +174,7 @@
     right: 0;
     top: 0;
     bottom: 0;
-    bottom: 15%;
+    bottom: 10%;
     width: 100%;
     min-width: 48px;
     text-align: center;
@@ -183,14 +183,17 @@
     align-items: center;
     justify-content: flex-end;
     overflow: hidden;
-    font-size: 20px;
+    font-size: 60px;
     line-height: 1.4
 }
 
 .shaka-text-container span {
-    background-color: rgba(0, 0, 0, .8);
     color: #fff;
-    display: inline-block
+    display: inline-block;
+    /* Layer text shadows to make them darker */
+    text-shadow: 0px 0px 4px #000, 0px 0px 4px #000, 0px 0px 4px #000, 0px 0px 4px #000;
+    /* Add padding, so the shadow doesn't clip */
+    padding: 20px;
 }
 
 .shaka-spinner-container {
