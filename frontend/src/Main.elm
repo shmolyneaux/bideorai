@@ -1,6 +1,8 @@
-port module Main exposing (Model, main)
+module Main exposing (Model, main)
 
 import Browser
+import Browser.Dom as Dom
+import Browser.Events as Events
 import Debug
 import Dict exposing (Dict)
 import Element
@@ -11,27 +13,9 @@ import Element.Input as Input
 import Html
 import Html.Attributes
 import Http
-import Json.Decode exposing (Decoder, dict, field, list, map2, map4, map5, string)
+import Json.Decode exposing (Decoder, dict, field, list, map2, map4, map6, maybe, string)
 import Json.Encode as E
-
-
-
--- DEV CONSTANTS
-
-
-backendPrefix =
-    ""
-
-
-
--- OUTBOUND PORTS
-{-
-   TODO:
-   - Change video
--}
-
-
-port alert : E.Value -> Cmd msg
+import Task
 
 
 
@@ -40,20 +24,13 @@ port alert : E.Value -> Cmd msg
    TODO:
    - Video finished
 -}
-
-
-port changeText : (String -> msg) -> Sub msg
-
-
-
 -- SUBSCRIPTIONS
 
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.batch
-        [ changeText TextChanged
-        ]
+        []
 
 
 
@@ -61,8 +38,7 @@ subscriptions _ =
 
 
 type alias Model =
-    { text : String
-    , videoUrl : Maybe String
+    { videoUrl : Maybe String
     , posterUrl : Maybe String
     , titles : List TitleShort
     , focusedTitle : FocusedTitle
@@ -81,8 +57,7 @@ type FocusedTitle
 
 
 type Msg
-    = TextChanged String
-    | VideoUrlChanged String (Maybe String)
+    = VideoUrlChanged String (Maybe String)
     | FetchedTitles (Result Http.Error (List TitleShort))
     | FetchedTitleDetail (Result Http.Error TitleLong)
     | PosterPressed String
@@ -94,12 +69,22 @@ type Msg
 
 init : () -> ( Model, Cmd Msg )
 init flags =
-    ( Model "Init value" Nothing Nothing [] NoFocusedTitle
-    , Http.get
-        { url = backendPrefix ++ "/titles"
+    ( Model Nothing Nothing [] NoFocusedTitle
+    , Cmd.batch
+        [ getTitles
+        ]
+    )
+
+
+
+-- COMMANDS
+
+
+getTitles =
+    Http.get
+        { url = "/titles"
         , expect = Http.expectJson FetchedTitles (list decodeTitleShort)
         }
-    )
 
 
 
@@ -109,9 +94,6 @@ init flags =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        TextChanged newText ->
-            ( { model | text = newText }, Cmd.none )
-
         VideoUrlChanged videoUrl posterUrl ->
             ( { model | videoUrl = Just videoUrl, posterUrl = posterUrl }, Cmd.none )
 
@@ -134,7 +116,7 @@ update msg model =
         PosterPressed title ->
             ( model
             , Http.get
-                { url = backendPrefix ++ "/titles/" ++ title
+                { url = "/titles/" ++ title
                 , expect = Http.expectJson FetchedTitleDetail decodeTitleLong
                 }
             )
@@ -144,11 +126,11 @@ update msg model =
 -- VIEW
 
 
+view : Model -> Html.Html Msg
 view model =
     Element.layout []
         (Element.column [ Element.width Element.fill ]
-            ([ Element.el [ Element.width Element.fill ] (Element.text model.text)
-             , Element.el [ Element.width Element.fill ]
+            ([ Element.el [ Element.width Element.fill ]
                 (Element.html
                     (Html.node "elm-player"
                         ([]
@@ -173,56 +155,92 @@ view model =
              ]
                 ++ (case model.focusedTitle of
                         FocusedTitle details ->
-                            List.map
-                                (\videoContent ->
-                                    Input.button
-                                        [ Element.width Element.fill
-                                        , Element.paddingEach
-                                            { top = 3
-                                            , right = 6
-                                            , left = 6
-                                            , bottom = 3
-                                            }
-                                        ]
-                                        { label =
-                                            Element.row
-                                                [ Element.width Element.fill ]
-                                                [ Element.image
-                                                    [ Element.width (Element.px 400)
-                                                    , Element.height (Element.px 255)
+                            if List.isEmpty details.content then
+                                [ Element.el
+                                    [ Element.width Element.fill
+                                    , Font.center
+                                    , Element.padding 10
+                                    ]
+                                    (Element.text "No content for title")
+                                ]
+
+                            else
+                                List.map
+                                    (\videoContent ->
+                                        Input.button
+                                            [ Element.width Element.fill
+                                            ]
+                                            { label =
+                                                Element.row
+                                                    [ Element.width Element.fill ]
+                                                    [ Element.image
+                                                        [ Element.width (Element.px 200)
+                                                        , Element.height (Element.px 128)
+                                                        ]
+                                                        { src = videoContent.thumbnailUrl
+                                                        , description = videoContent.title
+                                                        }
+                                                    , Element.column
+                                                        [ Element.width Element.fill
+                                                        , Element.spacing 10
+                                                        , Element.padding 10
+                                                        ]
+                                                        [ Element.paragraph
+                                                            [ Font.size 24
+                                                            ]
+                                                            [ Element.text
+                                                                (viewEpisodeNumber videoContent.metadata
+                                                                    ++ " - "
+                                                                    ++ videoContent.title
+                                                                )
+                                                            ]
+                                                        , Element.paragraph
+                                                            [ Font.color (Element.rgb255 180 180 180)
+                                                            , Font.italic
+                                                            , Font.size 16
+                                                            ]
+                                                            [ Element.text
+                                                                (Maybe.withDefault "" videoContent.source)
+                                                            ]
+                                                        ]
                                                     ]
-                                                    { src = backendPrefix ++ videoContent.thumbnailUrl
-                                                    , description = videoContent.title
-                                                    }
-                                                , Element.el [ Element.width Element.fill ]
-                                                    (Element.text
-                                                        (viewEpisodeNumber videoContent.metadata
-                                                            ++ " - "
-                                                            ++ videoContent.title
-                                                        )
-                                                    )
-                                                ]
-                                        , onPress = Just (VideoUrlChanged videoContent.videoUrl (Just videoContent.thumbnailUrl))
-                                        }
-                                )
-                                details.content
+                                            , onPress = Just (VideoUrlChanged videoContent.videoUrl (Just videoContent.thumbnailUrl))
+                                            }
+                                    )
+                                    details.content
 
                         _ ->
                             []
                    )
-                ++ List.map
-                    (\title ->
-                        Input.button
-                            []
-                            { label =
-                                Element.image []
-                                    { src = backendPrefix ++ title.posterUrl
-                                    , description = title.title
-                                    }
-                            , onPress = Just (PosterPressed title.title)
-                            }
-                    )
-                    model.titles
+                ++ [ Element.el [ Element.width Element.fill ]
+                        (Element.wrappedRow
+                            [ Element.centerX
+                            , Element.width Element.fill
+                            ]
+                            (let
+                                myList =
+                                    model.titles
+                             in
+                             List.indexedMap
+                                (\n title ->
+                                    Input.button
+                                        [ Element.width
+                                            (Element.minimum 200 (Element.fillPortion 1))
+                                        ]
+                                        { label =
+                                            Element.image
+                                                [ Element.width Element.fill
+                                                ]
+                                                { src = title.posterUrl
+                                                , description = title.title
+                                                }
+                                        , onPress = Just (PosterPressed title.title)
+                                        }
+                                )
+                                myList
+                            )
+                        )
+                   ]
             )
         )
 
@@ -262,6 +280,7 @@ type alias VideoContent =
     , thumbnailUrl : String
     , description : String
     , metadata : Dict String String
+    , source : Maybe String
     }
 
 
@@ -287,12 +306,13 @@ decodeTitleLong =
 
 decodeVideoContent : Decoder VideoContent
 decodeVideoContent =
-    map5 VideoContent
+    map6 VideoContent
         (field "title" string)
         (field "video_url" string)
         (field "thumbnail_url" string)
         (field "description" string)
         (field "metadata" (dict string))
+        (field "source" (maybe string))
 
 
 
