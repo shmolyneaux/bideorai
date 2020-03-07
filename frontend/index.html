@@ -174,6 +174,11 @@ class ElmPlayer extends HTMLElement {
                     elmPlayer.player.load(newValue).then(function() {
                       // This runs if the asynchronous load is successful.
                       console.log('The video has now been loaded!');
+                      // Do this blindly, no hard in it
+                      player.selectTextLanguage('en');
+                      player.setTextTrackVisibility(true).then(function() {
+                          console.log('SHM: Captions enabled');
+                      }).catch(onError);
                     }).catch(onError);  // onError is executed if the asynchronous load fails.
                 } else if (name === "poster" && newValue) {
                     elmPlayer.video.setAttribute('poster', newValue);
