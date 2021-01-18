@@ -18,7 +18,7 @@ def run_in_dir(d):
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--dest", required=True, help="user@sub.foo.com")
+parser.add_argument("dest", help="user@sub.foo.com")
 parser.add_argument("--loc", default="/opt")
 parser.add_argument("-n", "--dry-run", action="store_true")
 
