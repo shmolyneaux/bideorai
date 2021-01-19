@@ -13,6 +13,8 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from common import VideoInfo
+
 def get_node_text(node):
     return node.text
 
@@ -21,6 +23,7 @@ def get_node_int(node):
 
 
 specs = {
+    # For now we're not really using this...
     "tvshow": {
         "title": {"default": "Untitled", "multiple": False, "transform": get_node_text},
         "plot": {"default": "No plot information", "multiple": False, "transform": get_node_text},
@@ -38,9 +41,7 @@ specs = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("input", help="Input .nfo file or directory containing .nfo files")
-    parser.add_argument("-o", "--output", help="Output file (defaults to stdout)")
-    parser.add_argument("--source", help="Name of the source file")
+    parser.add_argument("video_info_path", help="VideoInfo json output")
 
     return parser.parse_args()
 
@@ -88,22 +89,28 @@ def nfo_to_json(input_file, output_file, source=None):
 if __name__ == "__main__":
     args = parse_args()
 
-    path = Path(args.input)
+    video_info_path = Path(args.video_info_path)
+    assert video_info_path.exists(), f"Expected VideoInfo path {video_info_path} to exist"
 
-    assert path.exists(), f"Path {path} does not exist"
+    video_info = VideoInfo.from_json(video_info_path.read_text())
 
-    if path.is_file():
-        with open(path) as input_file:
-            if args.output:
-                output_file = open(args.output, "w")
-                nfo_to_json(input_file, output_file, source=args.source)
-                output_file.close()
-            else:
-                output_file = sys.stdout
-                nfo_to_json(input_file, output_file, source=args.source)
+    nfo_path = Path(video_info.video_path).with_suffix(".nfo")
+    assert nfo_path.exists(), f"Expected .nfo path {nfo_path} to exist"
 
+    if nfo_path.is_file():
+        with open(nfo_path) as input_file:
+            json_path = nfo_path.with_suffix(".json")
+            with open(json_path, "w") as output_file:
+                # The second-last one should be the directory the video came
+                # from, which should best match the source (since the name of
+                # the video file can end up being a hash or something not useful).
+                nfo_to_json(input_file, output_file, source=Path(video_info.source_path).parts[-2])
+                print(f"Wrote video details from {nfo_path} to {json_path}")
+
+    # For now this is pretty much OBE since we don't have a way to specify
+    # directories...
     else:
-        for root, dirs, files in os.walk(path):
+        for root, dirs, files in os.walk(nfo_path):
             for name in files:
                 if Path(name).suffix != ".nfo":
                     continue
@@ -112,4 +119,4 @@ if __name__ == "__main__":
 
                 with open(nfo_path) as input_file:
                     with open(json_path, "w") as output_file:
-                        nfo_to_json(input_file, output_file, source=args.source)
+                        nfo_to_json(input_file, output_file, source=Path(video_info.source_path).stem)
